@@ -1,0 +1,64 @@
+import torch
+import audioop
+import ffmpeg
+from transformers import pipeline
+from pydub import AudioSegment
+import numpy as np
+import os
+import torchaudio
+import sys
+
+
+input_file = sys.argv[1]
+audio_path = input_file
+file_name, file_ext = os.path.splitext(input_file)
+
+
+# config
+model_id = "openai/whisper-large-v3"
+torch_dtype =  torch.float32
+device = "cpu"
+model_kwargs = {}
+generate_kwargs = {"language": "ja", "task": "transcribe"}
+
+# load model
+pipe = pipeline		(
+    "automatic-speech-recognition",
+    model=model_id,
+
+    torch_dtype=torch_dtype,
+    device=device,
+    model_kwargs=model_kwargs,
+    batch_size=16,
+    return_timestamps=True
+)
+
+
+
+audiomid = AudioSegment.from_file(audio_path)
+tempfilename = file_name + ".wav"
+audiomid.export(tempfilename , format = "wav")
+
+
+
+waveform, sample_rate = torchaudio.load(tempfilename)
+resample_waveform = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)(waveform)  
+
+
+resample_waveform_np = resample_waveform.numpy()
+
+# run inference
+result = pipe({"array": resample_waveform_np[0], "sampling_rate": 16000}, generate_kwargs=generate_kwargs, return_timestamps=True)
+
+
+outfilename = file_name + '.txt'
+f = open(outfilename,"w",encoding='utf-8')
+
+for i in range(len(result["chunks"])):
+    #f.write(str(result["chunks"][i]["timestamp"])) 
+    #f.write("  ") 
+    f.write(str(result["chunks"][i]["text"])) 
+    f.write("\n") 
+f.close()
+
+os.remove(tempfilename)
